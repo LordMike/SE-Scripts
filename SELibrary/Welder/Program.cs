@@ -19,15 +19,15 @@ namespace SELibrary.Welder
         const long CriticalPoint = 20;
         const long Scale = 1000000;   // Values is in millions 
 
-        IMyTextPanel panel;
-        IMyInteriorLight light;
-        long _myGridId;
+        readonly IMyTextPanel _panel;
+        readonly IMyInteriorLight _light;
+        readonly long _myGridId;
 
         public Program()
         {
             _myGridId = Me.CubeGrid.EntityId;
-            panel = (IMyTextPanel)GridTerminalSystem.GetBlockWithName(PanelName);
-            light = (IMyInteriorLight)GridTerminalSystem.GetBlockWithName(LightName);
+            _panel = (IMyTextPanel)GridTerminalSystem.GetBlockWithName(PanelName);
+            _light = (IMyInteriorLight)GridTerminalSystem.GetBlockWithName(LightName);
         }
 
         void Main()
@@ -36,8 +36,8 @@ namespace SELibrary.Welder
             GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(blocks, s => s.CubeGrid.EntityId == _myGridId);
 
             // Clear panel
-            panel.WritePublicTitle("");
-            panel.WritePublicText("");
+            _panel.WritePublicTitle("");
+            _panel.WritePublicText("");
 
             Dictionary<string, long> amounts = new Dictionary<string, long>();
 
@@ -77,44 +77,44 @@ namespace SELibrary.Welder
 
             if (critical.Count == 0)
             {
-                panel.WritePublicTitle("All ok", true);
-                panel.WritePublicText("All ok\n", true);
+                _panel.WritePublicTitle("All ok", true);
+                _panel.WritePublicText("All ok\n", true);
 
                 IEnumerable<KeyValuePair<string, long>> warnings = amounts.OrderBy(s => s.Value).Take(5);
 
                 foreach (KeyValuePair<string, long> inventoryItem in warnings)
                 {
-                    panel.WritePublicText($"{inventoryItem.Key} - {inventoryItem.Value:N0} Kg\n", true);
+                    _panel.WritePublicText($"{inventoryItem.Key} - {inventoryItem.Value:N0} Kg\n", true);
                 }
             }
             else
             {
                 lowest = critical.First().Value;
 
-                panel.WritePublicTitle("Some items are critical", true);
+                _panel.WritePublicTitle("Some items are critical", true);
                 foreach (KeyValuePair<string, long> inventoryItem in critical)
                 {
-                    panel.WritePublicText($"{inventoryItem.Key} - {inventoryItem.Value:N0} Kg\n", true);
+                    _panel.WritePublicText($"{inventoryItem.Key} - {inventoryItem.Value:N0} Kg\n", true);
                 }
             }
 
             if (lowest < CriticalPoint)
             {
-                light.BlinkLength = 30f;    // 30% 
-                light.BlinkIntervalSeconds = 0.5f;  // 0.5s 
-                light.Color = Color.Red;
+                _light.BlinkLength = 30f;    // 30% 
+                _light.BlinkIntervalSeconds = 0.5f;  // 0.5s 
+                _light.Color = Color.Red;
             }
             else if (lowest <= CutoffPoint)
             {
-                light.BlinkLength = 20f;    // 20% 
-                light.BlinkIntervalSeconds = 1.0f;  // 1s 
-                light.Color = Color.Yellow;
+                _light.BlinkLength = 20f;    // 20% 
+                _light.BlinkIntervalSeconds = 1.0f;  // 1s 
+                _light.Color = Color.Yellow;
             }
             else
             {
-                light.BlinkLength = 20f;    // 20% 
-                light.BlinkIntervalSeconds = 1.5f;  // 1.5s 
-                light.Color = Color.DarkGreen;
+                _light.BlinkLength = 20f;    // 20% 
+                _light.BlinkIntervalSeconds = 1.5f;  // 1.5s 
+                _light.Color = Color.DarkGreen;
             }
         }
 
