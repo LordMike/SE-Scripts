@@ -1,8 +1,10 @@
 ﻿#region pre-script
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Sandbox.ModAPI.Ingame;
+using SpaceEngineers.Game.ModAPI.Ingame;
 using VRage.Game;
 using VRage.Game.ModAPI.Ingame;
 
@@ -16,13 +18,16 @@ namespace SELibrary.MobileStationStatus
 
         readonly IMyTextPanel[] _panels;
 
+        readonly long _myGridId;
         readonly List<IMyTerminalBlock> _storages;
         readonly List<IMyBatteryBlock> _batteries;
         readonly List<IMyRefinery> _refineries;
+        readonly List<IMyReactor> _reactors;
+        readonly List<IMySolarPanel> _solarCells;
 
         public Program()
         {
-            long myGridId = Me.CubeGrid.EntityId;
+            _myGridId = Me.CubeGrid.EntityId;
 
             _panels = new IMyTextPanel[3];
             for (int i = 0; i < _panels.Length; i++)
@@ -30,28 +35,91 @@ namespace SELibrary.MobileStationStatus
 
             // Locate blocks
             _storages = new List<IMyTerminalBlock>();
-            GridTerminalSystem.GetBlocksOfType(_storages, s => s.CubeGrid.EntityId == myGridId && s.HasInventory);
-            _storages.RemoveAll(s => s.GetInventory() == null);
+            GridTerminalSystem.GetBlocksOfType(_storages, s => s.CubeGrid.EntityId == _myGridId && s.InventoryCount > 0);
 
             _batteries = new List<IMyBatteryBlock>();
-            GridTerminalSystem.GetBlocksOfType(_batteries, s => s.CubeGrid.EntityId == myGridId);
+            GridTerminalSystem.GetBlocksOfType(_batteries, s => s.CubeGrid.EntityId == _myGridId);
 
             _refineries = new List<IMyRefinery>();
-            GridTerminalSystem.GetBlocksOfType(_refineries, s => s.CubeGrid.EntityId == myGridId);
-
+            GridTerminalSystem.GetBlocksOfType(_refineries, s => s.CubeGrid.EntityId == _myGridId);
             _refineries = _refineries.OrderBy(s => s.CustomName).ToList();
+
+            _reactors = new List<IMyReactor>();
+            GridTerminalSystem.GetBlocksOfType(_reactors, s => s.CubeGrid.EntityId == _myGridId);
+
+            _solarCells = new List<IMySolarPanel>();
+            GridTerminalSystem.GetBlocksOfType(_solarCells, s => s.CubeGrid.EntityId == _myGridId);
+
+            _refineries.Sort((a, b) => string.Compare(a.CustomName, b.CustomName, StringComparison.Ordinal));
+            _reactors.Sort((a, b) => string.Compare(a.CustomName, b.CustomName, StringComparison.Ordinal));
+            _solarCells.Sort((a, b) => string.Compare(a.CustomName, b.CustomName, StringComparison.Ordinal));
         }
 
         private void HandleEnergy()
         {
             IMyTextPanel panel = _panels[0];
 
-            // Calculate battery status
-            float batteryMax = _batteries.Sum(s => s.MaxStoredPower);
-            float batteryCur = _batteries.Sum(s => s.CurrentStoredPower);
-            float batteryPct = batteryCur / batteryMax;
+            panel.WritePublicText("");
 
-            panel.WritePublicText($"Battery: {batteryPct:P2} ({_batteries.Count} batteries, {batteryMax:N2} MWh)\n");
+            // Calculate battery status
+            if (_batteries.Any())
+            {
+                float batteryMax = _batteries.Sum(s => s.MaxStoredPower);
+                float batteryCur = _batteries.Sum(s => s.CurrentStoredPower);
+                float batteryPct = batteryCur / batteryMax;
+
+                panel.WritePublicText($"Battery: {batteryPct:P2} ({_batteries.Count}pc, {batteryMax:N2} MWh)\n", true);
+            }
+            else
+            {
+                panel.WritePublicText("Battery: <none>\n", true);
+            }
+
+            List<IMyBatteryBlock> batteriesExternal = new List<IMyBatteryBlock>();
+            GridTerminalSystem.GetBlocksOfType(batteriesExternal, s => s.CubeGrid.EntityId != _myGridId);
+
+            if (batteriesExternal.Any())
+            {
+                float batteryMax = batteriesExternal.Sum(s => s.MaxStoredPower);
+                float batteryCur = batteriesExternal.Sum(s => s.CurrentStoredPower);
+                float batteryPct = batteryCur / batteryMax;
+
+                panel.WritePublicText($"Battery EXT: {batteryPct:P2} ({batteriesExternal.Count}pc, {batteryMax:N2} MWh)\n", true);
+            }
+            else
+            {
+                panel.WritePublicText("Battery EXT: <none>\n", true);
+            }
+
+            float produceCur = 0;
+            float produceMax = 0;
+
+            // Output individual sources
+            foreach (IMyReactor source in _reactors)
+            {
+                IMyInventory inventory = source.GetInventory();
+                long mass = inventory.CurrentMass.RawValue / Scale;
+
+                float pct = source.CurrentOutput / source.MaxOutput;
+
+                panel.WritePublicText($"- {source.CustomName}, {mass:N0} Kg ({source.CurrentOutput:N1} MW, {pct:P2})\n", true);
+
+                produceCur += source.CurrentOutput;
+                produceMax += source.MaxOutput;
+            }
+
+            foreach (IMySolarPanel source in _solarCells)
+            {
+                float pct = source.CurrentOutput / source.MaxOutput;
+
+                panel.WritePublicText($"- {source.CustomName}, ({source.CurrentOutput:N1} MW, {pct:P2})\n", true);
+
+                produceCur += source.CurrentOutput;
+                produceMax += source.MaxOutput;
+            }
+
+            // Total energy
+            panel.WritePublicText($"Total {produceCur:N2} MW / {produceMax:N2} MW ({produceCur / produceMax:P2})\n", true);
         }
 
         private void HandleOreCargo()
@@ -65,28 +133,29 @@ namespace SELibrary.MobileStationStatus
 
             foreach (IMyTerminalBlock block in _storages)
             {
-                IMyInventory myInventory = block.GetInventory();
-                if (myInventory == null)
-                    continue;
-
-                volumeCap += myInventory.MaxVolume.RawValue;
-                volumeCur += myInventory.CurrentVolume.RawValue;
-
-                foreach (IMyInventoryItem item in myInventory.GetItems())
+                for (int i = 0; i < block.InventoryCount; i++)
                 {
-                    string itemId = item.Content.TypeId.ToString();
-                    string itemName = item.Content.SubtypeName;
+                    IMyInventory myInventory = block.GetInventory(i);
 
-                    massTotal += item.Amount.RawValue / Scale;
+                    volumeCap += myInventory.MaxVolume.RawValue;
+                    volumeCur += myInventory.CurrentVolume.RawValue;
 
-                    if (!itemId.EndsWith("_Ore"))
-                        continue;
+                    foreach (IMyInventoryItem item in myInventory.GetItems())
+                    {
+                        string itemId = item.Content.TypeId.ToString();
+                        string itemName = item.Content.SubtypeName;
 
-                    long tmp;
-                    oreInventory.TryGetValue(itemName, out tmp);
-                    tmp += item.Amount.RawValue / Scale;
+                        massTotal += item.Amount.RawValue / Scale;
 
-                    oreInventory[itemName] = tmp;
+                        if (!itemId.EndsWith("_Ore"))
+                            continue;
+
+                        long tmp;
+                        oreInventory.TryGetValue(itemName, out tmp);
+                        tmp += item.Amount.RawValue / Scale;
+
+                        oreInventory[itemName] = tmp;
+                    }
                 }
             }
 
