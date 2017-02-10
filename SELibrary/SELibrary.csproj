@@ -95,6 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MobileStationStatus\Program.cs" />
+    <Compile Include="Grinder\Program.cs" />
     <Compile Include="Welder\Program.cs" />
     <Compile Include="BigMiner\Program.cs" />
     <Compile Include="MobileStationDoorCloser\Program.cs" />
